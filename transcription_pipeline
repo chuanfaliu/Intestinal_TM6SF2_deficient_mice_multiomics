@@ -1,0 +1,60 @@
+###########
+01.qc
+###########
+
+fastqc 0.rawdata/$1_1.fq.gz \
+    -o 1.QC/ --noextract
+fastqc 0.rawdata/$1_2.fq.gz \
+    -o 1.QC/ --noextract
+trim_galore \
+    --cores 4
+    --paired \
+    --quality 20 \
+    --fastqc \
+    --length 25 -j 10 \
+    --output_dir 2.cleandata \
+    0.rawdata/$1_1.fq.gz 0.rawdata/$1_2.fq.gz
+
+##########
+02. quality control
+##########
+
+sortmerna --ref /expt/cfliu/database/RNAseq_db/sortmerna_db/smr_v4.3_default_db.fasta \
+    --reads 1.cleandata/$1_1_val_1.fq.gz \
+    --reads 1.cleandata/$1_2_val_2.fq.gz \
+    --aligned 2.rm_rRNA/$1_aligned \
+    --other 2.rm_rRNA/$1_filtered \
+    --fastx --threads 60 -v \
+    --workdir temp_$1/
+gzip 2.rm_rRNA/$1_aligned.fq
+gzip 2.rm_rRNA/$1_filtered.fq
+rm -rf temp_$1/
+
+########
+03.mapping
+########
+
+mkdir -p 3.bam
+
+hisat2 -p 30 \
+    -5 15\
+    -3 15\
+    -x /expt/cfliu/database/RNAseq_db/mouse/grcm38_tran \
+    -U 2.rm_rRNA/$1_filtered.fq.gz \
+    | tee >(samtools flagstat - > 3.bam/$1.hisat2.flagstat.txt) \
+    | samtools sort -O BAM \
+    | tee 3.bam/$1.bam \
+    | samtools index - 3.bam/$1.bam.bai
+
+########
+04.gene count
+########
+
+mkdir -p 5.result
+featureCounts \
+    -T 10 \
+    -g 'gene_name'\
+    -a /expt/cfliu/database/RNAseq_db/mouse/grcm38_tran/genome_tran.gtf \
+    -o 5.result/final_featureCounts_gene_name.txt \
+    3.bam/*.bam
+
